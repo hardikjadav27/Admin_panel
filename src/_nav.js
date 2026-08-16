@@ -3,13 +3,13 @@ import CIcon from '@coreui/icons-react'
 import { cilSpeedometer, cilPeople } from '@coreui/icons'
 import { CNavItem, CNavTitle } from '@coreui/react'
 
-const role = localStorage.getItem('role')
+const roleId = localStorage.getItem('roleId')
 
-const isSuperAdmin = role === 'Super Admin'
-const isAdmin = role === 'Admin'
-const isSubAdmin = role === 'SubAdmin'
-const isMaster = role === 'Master'
-console.log('testest', role, isSuperAdmin, isAdmin, isSubAdmin, isMaster)
+const isSuperAdmin = roleId === "1"
+const isAdmin = roleId === "2"
+const isSubAdmin = roleId === "3"
+const isMaster = roleId === "4"
+console.log('testest', roleId, isSuperAdmin, isAdmin, isSubAdmin, isMaster)
 
 const _nav = [
   // =========================

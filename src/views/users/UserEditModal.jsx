@@ -14,6 +14,7 @@ import {
   CButton,
 } from '@coreui/react'
 import { axios_get, axios_post, axios_put } from '../../api/axiosInstance'
+import Select from 'react-select'
 import './UserEditModal.scss'
 
 function UserEditModal({ user, onClose, onSuccess }) {
@@ -22,6 +23,9 @@ function UserEditModal({ user, onClose, onSuccess }) {
   const location = useLocation()
 
   const isEdit = Boolean(user || id)
+  const loggedInRoleId = Number(localStorage.getItem('roleId')) || 0
+  const parentId = localStorage.getItem('userId') || ''
+  const isSuperAdmin = loggedInRoleId === 1
 
   const getRoleFromPath = () => {
     const path = location.pathname.toLowerCase()
@@ -105,6 +109,11 @@ function UserEditModal({ user, onClose, onSuccess }) {
   // --------------------------------------------------
 
   useEffect(() => {
+    if (user?.id) {
+      fetchUser(user.id)
+      return
+    }
+
     if (user) {
       setFormData((prev) => ({
         ...prev,
@@ -183,52 +192,55 @@ function UserEditModal({ user, onClose, onSuccess }) {
   // Scripts
   // --------------------------------------------------
 
-  const fetchScripts = async () => {
-    try {
-      const response = await axios_get('/Scripts')
-
-      if (response?.success) {
-        setParentScripts(response.data || [])
-      }
-    } catch (error) {
-      console.error('SCRIPT ERROR:', error)
-    }
-  }
-
+  // Fetch parent scripts for non-SuperAdmins
   useEffect(() => {
-    fetchScripts()
-  }, [])
+    if (!isSuperAdmin && parentId) {
+      const fetchParentScripts = async () => {
+        try {
+          const response = await axios_get(`/Users/${parentId}/scripts`)
+          if (response?.success) {
+            setParentScripts(response.data || [])
+            if (!user?.allowedScripts && !id && !user?.id) {
+              setSelectedScripts(response.data || [])
+            }
+          }
+        } catch (error) {
+          console.error('SCRIPT ERROR:', error)
+        }
+      }
+      fetchParentScripts()
+    }
+  }, [isSuperAdmin, parentId, user, id])
 
-  const filteredScripts = parentScripts.filter((item) => {
-    const script =
-      typeof item === 'string' ? item : item.symbol || item.name || item.scriptName || ''
-
-    return script.toLowerCase().includes(scriptSearch.toLowerCase())
-  })
+  // Debounced global search for SuperAdmin
+  useEffect(() => {
+    if (isSuperAdmin) {
+      if (scriptSearch.length < 2) {
+        setParentScripts([])
+        return
+      }
+      const timeoutId = setTimeout(async () => {
+        try {
+          const response = await axios_get(`/Instruments/search?query=${scriptSearch}&limit=200`)
+          // Instruments/search returns array directly, not wrapped in success
+          const symbols = (Array.isArray(response) ? response : response?.data || []).map(
+            (item) => item.symbol || item.Symbol || item.name || JSON.stringify(item)
+          )
+          setParentScripts(symbols)
+        } catch (error) {
+          console.error('SEARCH ERROR:', error)
+        }
+      }, 500)
+      return () => clearTimeout(timeoutId)
+    }
+  }, [scriptSearch, isSuperAdmin])
 
   const getScriptName = (item) => {
     if (typeof item === 'string') return item
-
     return item.symbol || item.name || item.scriptName || ''
   }
 
-  const toggleScript = (script) => {
-    setSelectedScripts((prev) =>
-      prev.includes(script) ? prev.filter((item) => item !== script) : [...prev, script],
-    )
-  }
-
-  const selectVisibleScripts = () => {
-    const visible = filteredScripts.map(getScriptName)
-
-    setSelectedScripts((prev) => [...new Set([...prev, ...visible])])
-  }
-
-  const clearVisibleScripts = () => {
-    const visible = filteredScripts.map(getScriptName)
-
-    setSelectedScripts((prev) => prev.filter((item) => !visible.includes(item)))
-  }
+  const allAvailableScripts = Array.from(new Set([...parentScripts.map(getScriptName), ...selectedScripts]))
 
   const getRoleName = (roleId) => {
     switch (Number(roleId)) {
@@ -753,48 +765,67 @@ function UserEditModal({ user, onClose, onSuccess }) {
           <section className="form-section">
             <h5>Allowed Scripts ({selectedScripts.length})</h5>
 
-            <CFormInput
-              placeholder="Search scripts..."
-              value={scriptSearch}
-              onChange={(e) => setScriptSearch(e.target.value)}
+            <Select
+              isMulti
+              options={allAvailableScripts.map(script => ({ value: script, label: script }))}
+              value={selectedScripts.map(script => ({ value: script, label: script }))}
+              onChange={(selectedOptions) => {
+                setSelectedScripts(selectedOptions ? selectedOptions.map(opt => opt.value) : [])
+              }}
+              onInputChange={(newValue) => setScriptSearch(newValue)}
+              placeholder="Search and select scripts..."
+              noOptionsMessage={() => "No scripts found."}
+              styles={{
+                control: (base) => ({
+                  ...base,
+                  backgroundColor: '#1b1b29',
+                  borderColor: '#2a2a3c',
+                  color: '#fff',
+                  boxShadow: 'none',
+                  '&:hover': {
+                    borderColor: '#3a3a52',
+                  },
+                }),
+                menu: (base) => ({
+                  ...base,
+                  backgroundColor: '#1b1b29',
+                  zIndex: 9999,
+                }),
+                option: (base, state) => ({
+                  ...base,
+                  backgroundColor: state.isFocused ? '#2a2a3c' : '#1b1b29',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  '&:active': {
+                    backgroundColor: '#3a3a52',
+                  }
+                }),
+                multiValue: (base) => ({
+                  ...base,
+                  backgroundColor: '#321fdb',
+                  borderRadius: '4px',
+                }),
+                multiValueLabel: (base) => ({
+                  ...base,
+                  color: '#fff',
+                  fontWeight: 'bold',
+                }),
+                multiValueRemove: (base) => ({
+                  ...base,
+                  color: '#fff',
+                  cursor: 'pointer',
+                  ':hover': {
+                    backgroundColor: '#20139b',
+                    color: '#fff',
+                    borderRadius: '0 4px 4px 0',
+                  },
+                }),
+                input: (base) => ({
+                  ...base,
+                  color: '#fff',
+                }),
+              }}
             />
-
-            <div className="script-actions">
-              <CButton color="success" onClick={selectVisibleScripts}>
-                SELECT VISIBLE
-              </CButton>
-
-              <CButton color="danger" onClick={clearVisibleScripts}>
-                CLEAR VISIBLE
-              </CButton>
-            </div>
-
-            <div className="script-list">
-              {filteredScripts.length === 0 ? (
-                <div>No scripts found.</div>
-              ) : (
-                filteredScripts.map((item) => {
-                  const script = getScriptName(item)
-
-                  return (
-                    <label
-                      className={
-                        selectedScripts.includes(script) ? 'script-item selected' : 'script-item'
-                      }
-                      key={script}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedScripts.includes(script)}
-                        onChange={() => toggleScript(script)}
-                      />
-
-                      {script}
-                    </label>
-                  )
-                })
-              )}
-            </div>
           </section>
 
           {/* -------------------------------- */}
